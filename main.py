@@ -1,5 +1,6 @@
 import platform
 import sys
+import argparse
 import subprocess
 import plistlib
 import os
@@ -9,10 +10,25 @@ import pkg_resources
 # https://github.com/dortania/OpenCore-Legacy-Patcher/blob/main/resources/sys_patch/sys_patch.py
 # https://github.com/ExtremeXT/APUDowngrader
 
+
+# argparse Handler
+parser = argparse.ArgumentParser(description='This Tools Will Search And Downgrade The Kext / Bundle On Your S/L/E And Even Restore It', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('-i', '--input', type=str, help='Example : /Users/XXXX/Documents/new.file.kext', required=True)
+parser.add_argument('-r', '--restore', help='Restore All The Kext', action='store_true')
+args = parser.parse_args()
+config = vars(args)
+
+# Constants
+MOUNTPATH = "/System/Volumes/Update/mnt1"
+KEXTHOMEDIR = "/System/Volumes/Update/mnt1/System/Library/Extensions"
+
 # Modules Handler
 REQUIRED_MODULES = {'termcolor', 'py-sip-xnu'}
 INSTALLED_MODULES = {pkg.key for pkg in pkg_resources.working_set}
 MISSING_MODULES = REQUIRED_MODULES - INSTALLED_MODULES
+
+# Script run dir
+scriptDir = os.path.dirname(os.path.realpath(__file__))
 
 def runShellCommand(command): 
     try:
@@ -47,6 +63,23 @@ if not sys.platform.startswith('darwin'):
 else:
     successPrint(f"Detected : MacOS {platform.mac_ver()[0]}")
 
+# Checking Secure Boot status
+if runShellCommand("nvram 94b73556-2197-4702-82a8-3e1337dafbfb:AppleSecureBootPolicy").stdout.decode().split("%")[1].strip() == '00':
+    successPrint("Apple Secure Boot is Disabled! Continueing...")
+else:
+    warningPrint("Apple Secure Boot is enabled! It has to be turned off in order to continue.")
+    warningPrint("Please set SecureBootModel to Disabled.")
+    sys.exit()
+
+# Checking SIP status
+if (py_sip_xnu.SipXnu().get_sip_status().can_edit_root and py_sip_xnu.SipXnu().get_sip_status().can_load_arbitrary_kexts):
+    successPrint("Compatible SIP value detected! Continueing...")
+else:
+    warningPrint("Your SIP value is too low! It needs to be at least 0x803.")
+    warningPrint("That means csr-active-config has to be set to at least 03080000.")
+    warningPrint("If this has already been done, you might also need to reset NVRAM.")
+    sys.exit()
+
 warningPrint("Please enter your password when you are asked to.")
 
 class DiskRoot:
@@ -71,13 +104,13 @@ class DiskRoot:
         successPrint("Root volume successfully unmounted!")
 
     def getRootPartition():
-        rootPartition = plistlib.loads(subprocess.run("diskutil info -plist /".split(), stdout=subprocess.PIPE).stdout.decode().strip().encode())["DeviceIdentifier"]
+        rootPartition = plistlib.loads(runShellCommand("diskutil info -plist /").stdout.decode().strip().encode())["DeviceIdentifier"]
         if rootPartition.count("s") > 1:
             rootPartition = rootPartition[:-2]
         return rootPartition
 
 # Init DiskRoot
-Disk = DiskRoot(DiskRoot.getRootPartition(), "/System/Volumes/Update/mnt1")
+Disk = DiskRoot(DiskRoot.getRootPartition(), MOUNTPATH)
 
 # Unmounting Disk First
 Disk.unmountDisk()
@@ -85,66 +118,91 @@ Disk.unmountDisk()
 # Mounting Disk
 Disk.mountDisk()
 
-# Ask Kext Dir To Replace
-warningPrint("Example : /Users/XXXX/Documents/file.kext/Content/new.file.kext")
-kextDir = input(colored("Please Enter The Full Kext Directory To Replace: ", "cyan", attrs=["bold"])).strip()
-
-# Ask Kext Location
-warningPrint("Example : /Users/XXXX/Documents/new.file.kext")
-kextLocation = input(colored("Please Enter The Kext Location: ", "cyan", attrs=["bold"])).strip()
-
-# Get Kext Name with extension
-if len(kextDir) != 0:
-    kextName = os.path.basename(kextDir)
-    if not kextName.endswith(".kext") or kextName.endswith(".bundle"):
-        errorPrint("Please enter a valid kext directory!")
+# Handling Restore
+if config["restore"]:
+    # Get All File From Backup Directory
+    backupDir = os.path.join(scriptDir, "backup")
+    
+    if not os.path.exists(backupDir):
+        errorPrint("Backup Directory Not Found!")
         sys.exit()
-else:
-    kextName = os.path.basename(kextLocation)
-    if not kextName.endswith(".kext") or kextName.endswith(".bundle"):
-        errorPrint("Please enter a valid kext directory!")
+    if not os.listdir(backupDir):
+        errorPrint("Backup Directory Is Empty!")
         sys.exit()
 
-# AutoFind Kext Dir
+    # Get All Kext From Backup Directory
+    kextList = [kext for kext in os.listdir(backupDir) if kext.endswith(".kext") or kext.endswith(".bundle")]
+
+    # Print all kext that will be restored
+    warningPrint("Kext that will be restored :")
+    for kext in kextList:
+        successPrint(kext)
+
+    # Ask for confirmation
+    if input("Are you sure you want to restore all kext? (y/n) : ").lower() != "y":
+        sys.exit()
+
+    # Remove All Kext From S/L/E That Has Name Same As Backup Directory
+    for kext in kextList:
+        kextDir = runShellCommand(f"sudo find {KEXTHOMEDIR} -name {kext}").stdout.decode().strip()
+        if kextDir == "":
+            warningPrint(f"Kext {kext} not found!")
+        else:
+            runShellCommand(f"sudo rm -rf {kextDir}")
+            successPrint(f"Kext {kext} successfully removed!")
+    
+    # Copy All Kext From Backup Directory To S/L/E
+    for kext in kextList:
+        runShellCommand(f"sudo cp -R {os.path.join(backupDir, kext)} {KEXTHOMEDIR}")
+        successPrint(f"Kext {kext} successfully restored!")
+
+    # Fixing Permissions
+    for kext in kextList:
+        kextDir = runShellCommand(f"sudo find {KEXTHOMEDIR} -name {kext}").stdout.decode().strip()
+        runShellCommand(f"sudo chmod -Rf 755 {kextDir}")
+        runShellCommand(f"sudo chown -Rf root:wheel {kextDir}")
+        successPrint(f"Kext {kext} successfully fixed permissions!")
+    
+    # Rebuilding KC
+    resultKC = runShellCommand("sudo kmutil install --volume-root /System/Volumes/Update/mnt1 --update-all --variant-suffix release")
+    if resultKC.returncode != 0:
+        warningPrint("Failed to rebuild KC!")
+        errorPrint(resultKC.stdout.decode()+"\n")
+        sys.exit()
+    successPrint("Successfully rebuilt KC!")
+
+    # Create system volume snapshot
+    resultBless = runShellCommand("sudo bless --folder /System/Volumes/Update/mnt1/System/Library/CoreServices --bootefi --create-snapshot")
+    if resultBless.returncode != 0:
+        warningPrint("Failed to create system volume snapshot!!")
+        errorPrint(resultBless.stdout.decode()+"\n")
+        sys.exit()
+    successPrint("Successfully created a new APFS volume snapshot!")
+
+    successPrint("Successfully restored all kexts!")
+    sys.exit()
+
+# Handling Replace
+kextLocation = config["input"]
+
+kextName = os.path.basename(kextLocation)
+if not kextName.endswith(".kext") or kextName.endswith(".bundle"):
+    errorPrint("Please enter a valid kext directory!")
+    sys.exit()
+
+# AutoFind Kext Directory
+kextDir = runShellCommand(f"sudo find {KEXTHOMEDIR} -name {kextName}").stdout.decode().strip()
 if kextDir == "":
-    kextHomeDir = "/System/Volumes/Update/mnt1/System/Library/Extensions"
-    kextDir = runShellCommand(f"sudo find {kextHomeDir} -name {kextName}").stdout.decode().strip()
-    print(kextDir)
-    exit()
-    if kextDir == "":
-        errorPrint("Kext not found!")
-        sys.exit()
-
-# Script run dir
-scriptDir = os.path.dirname(os.path.realpath(__file__))
+    errorPrint("Kext not found!")
+    sys.exit()
 
 # Print Confirmation
 successPrint(f"Kext Replaced Directory: {kextDir}")
 successPrint(f"Kext Location: {kextLocation}")
 
-# Checking Secure Boot status
-if runShellCommand("nvram 94b73556-2197-4702-82a8-3e1337dafbfb:AppleSecureBootPolicy").stdout.decode().split("%")[1].strip() == '00':
-    successPrint("Apple Secure Boot is Disabled! Proceeding...")
-else:
-    warningPrint("Apple Secure Boot is enabled! It has to be turned off in order to continue.")
-    warningPrint("Please set SecureBootModel to Disabled.")
+# Ask for confirmation
+if input("Are you sure you want to replace the kext? (y/n) : ").lower() != "y":
     sys.exit()
-
-# Checking SIP status
-if (py_sip_xnu.SipXnu().get_sip_status().can_edit_root and py_sip_xnu.SipXnu().get_sip_status().can_load_arbitrary_kexts):
-    successPrint("Compatible SIP value detected! Proceeding...")
-else:
-    warningPrint("Your SIP value is too low! It needs to be at least 0x803.")
-    warningPrint("That means csr-active-config has to be set to at least 03080000.")
-    warningPrint("If this has already been done, you might also need to reset NVRAM.")
-    sys.exit()
-
-choice = input(colored("The script is ready to start. Type \"I am sure that I want to downgrade my root volume\" if you're sure you want to proceed: ", "yellow", attrs=["bold"]))
-#if choice == "I am sure that I want to downgrade my root volume":
-#    successPrint("Proceeding with replacing kexts.")
-#else:
-#    successPrint("Exiting...")
-#    sys.exit()
 
 # Backing up original kexts
 if not os.path.exists(f"{scriptDir}/Backups"):
@@ -152,7 +210,6 @@ if not os.path.exists(f"{scriptDir}/Backups"):
 
 # If Backup Not Exists Then Create And If Exists Then Don't Create
 if not os.path.exists(f"{scriptDir}/Backups/{kextName}"):
-    print(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     runShellCommand(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     successPrint(f"Backup of {kextName} created!")
 else:
@@ -178,20 +235,18 @@ print("Kext permissions successfully fixed!")
 # Rebuild KC
 resultKC = runShellCommand("sudo kmutil install --volume-root /System/Volumes/Update/mnt1 --update-all --variant-suffix release")
 if resultKC.returncode != 0:
-    print("Failed to rebuild KC!")
-    print(resultKC.stdout.decode())
-    print("")
+    warningPrint("Failed to rebuild KC!")
+    errorPrint(resultKC.stdout.decode()+"\n")
     sys.exit()
-print("Successfully rebuilt KC!")
+successPrint("Successfully rebuilt KC!")
 
 # Create system volume snapshot
 resultBless = runShellCommand("sudo bless --folder /System/Volumes/Update/mnt1/System/Library/CoreServices --bootefi --create-snapshot")
 if resultBless.returncode != 0:
-    print("Failed to create system volume snapshot!!")
-    print(resultBless.stdout.decode())
-    print("")
+    warningPrint("Failed to create system volume snapshot!!")
+    errorPrint(resultBless.stdout.decode()+"\n")
     sys.exit()
-print("Successfully created a new APFS volume snapshot!")
+successPrint("Successfully created a new APFS volume snapshot!")
 
-print("Successfully replaced the required kexts!")
+successPrint("Successfully replaced the required kexts!")
 sys.exit(0)
