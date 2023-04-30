@@ -16,7 +16,7 @@ MISSING_MODULES = REQUIRED_MODULES - INSTALLED_MODULES
 
 def runShellCommand(command): 
     try:
-        return subprocess.run(command.split(), check=True)
+        return subprocess.run(command.split(), check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         return e
 
@@ -41,11 +41,11 @@ successPrint = lambda x: cprint(x, "green", attrs=["bold"])
 
 # Makesure To Run Only On Mac
 if not sys.platform.startswith('darwin'):
-    warningPrint(f"Detected : {sys.platform}")
+    warningPrint(f"Detected :{sys.platform}")
     errorPrint(f"Please Only Run It On MacOS")
-    # sys.exit()
+    sys.exit()
 else:
-    successPrint(f"Detected : {platform.mac_ver()[0]}")
+    successPrint(f"Detected : {} {platform.mac_ver()[0]}")
 
 warningPrint("Please enter your password when you are asked to.")
 
@@ -54,21 +54,21 @@ class DiskRoot:
         self.devicePath = devicePath
         self.mountPath = mountPath
 
-    def mountDisk(devicePath, mountPath):
+    def mountDisk(self):
         try:
-            runShellCommand(f"sudo /sbin/mount_apfs -R {devicePath} {mountPath}")
+            runShellCommand(f"sudo /sbin/mount_apfs -R {self.devicePath} {self.mountPath}")
         except subprocess.CalledProcessError as e:
             errorPrint("Failed to mount root volume!")
             errorPrint("[Command Output] " + e.output.decode())
-        print("Root volume successfully mounted!")
+        successPrint("Root volume successfully mounted!")
 
-    def unmountDisk(mountPath):
+    def unmountDisk(self):
         try:
-            runShellCommand(f"sudo /sbin/umount {mountPath}")
+            runShellCommand(f"sudo /sbin/umount {self.mountPath}")
         except subprocess.CalledProcessError as e:
             errorPrint("Failed to unmount root volume!")
             errorPrint("[Command Output] " + e.output.decode())
-        print("Root volume successfully unmounted!")
+        successPrint("Root volume successfully unmounted!")
 
     def getRootPartition():
         rootPartition = plistlib.loads(subprocess.run("diskutil info -plist /".split(), stdout=subprocess.PIPE).stdout.decode().strip().encode())["DeviceIdentifier"]
@@ -80,16 +80,18 @@ class DiskRoot:
 Disk = DiskRoot(DiskRoot.getRootPartition(), "/System/Volumes/Update/mnt1")
 
 # Unmounting Disk First
-Disk.unmountDisk(Disk.mountPath)
+Disk.unmountDisk()
 
 # Mounting Disk
-Disk.mountDisk(Disk.devicePath, Disk.mountPath)
+Disk.mountDisk()
 
 # Ask Kext Dir To Replace
-kextDir = colored(input("Please Enter The Kext Directory To Replace: "), "cyan", attrs=["bold"])
+warningPrint("Example : /Users/XXXX/Documents/file.kext/Content/new.file.kext")
+kextDir = input(colored("Please Enter The Full Kext Directory To Replace: ", "cyan", attrs=["bold"])).strip()
 
 # Ask Kext Location
-kextLocation = colored(input("Please Enter The Kext Location: "), "cyan", attrs=["bold"])
+warningPrint("Example : /Users/XXXX/Documents/new.file.kext")
+kextLocation = input(colored("Please Enter The Kext Location: ", "cyan", attrs=["bold"])).strip()
 
 # Script run dir
 scriptDir = os.path.dirname(os.path.realpath(__file__))
@@ -115,12 +117,12 @@ else:
     warningPrint("If this has already been done, you might also need to reset NVRAM.")
     sys.exit()
 
-choice = input("The script is ready to start. Type \"I am sure that I want to downgrade my root volume\" if you're sure you want to proceed: ")
-if choice == "I am sure that I want to downgrade my root volume":
-    print("Proceeding with replacing kexts.")
-else:
-    print("Exiting...")
-    sys.exit()
+choice = input(colored("The script is ready to start. Type \"I am sure that I want to downgrade my root volume\" if you're sure you want to proceed: ", "yellow", attrs=["bold"]))
+#if choice == "I am sure that I want to downgrade my root volume":
+#    successPrint("Proceeding with replacing kexts.")
+#else:
+#    successPrint("Exiting...")
+#    sys.exit()
 
 # Backing up original kexts
 if not os.path.exists(f"{scriptDir}/Backups"):
@@ -128,8 +130,12 @@ if not os.path.exists(f"{scriptDir}/Backups"):
 
 # Get Kext Name
 kextName = os.path.basename(kextDir)
+if len(kextName) == 0:
+    kextName = os.path.basename(os.path.dirname(kextDir))
+print(kextName)
 
 # If Backup Not Exists Then Create And If Exists Then Don't Create
+## TODO FIXED THIS
 if not os.path.exists(f"{scriptDir}/Backups/{kextName}"):
     runShellCommand(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     successPrint(f"Backup of {kextName} created!")
@@ -141,7 +147,7 @@ runShellCommand(f"sudo rm -rf {kextDir}")
 successPrint("Kexts successfully deleted!")
 
 # cp -R kext
-cpResult = runShellCommand(f"sudo cp -Rf {kextLocation} {kextDir}")
+cpResult = runShellCommand(f"sudo cp -Rf {str(kextLocation)} {str(kextDir)}")
 if cpResult.returncode != 0:
     errorPrint("Failed to copy kexts!")
     errorPrint("[Command Output] " + cpResult.stdout.decode())
