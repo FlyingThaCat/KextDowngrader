@@ -94,15 +94,22 @@ warningPrint("Example : /Users/XXXX/Documents/new.file.kext")
 kextLocation = input(colored("Please Enter The Kext Location: ", "cyan", attrs=["bold"])).strip()
 
 # Get Kext Name with extension
-kextName = os.path.basename(kextDir)
-if not kextName.endswith(".kext"):
-    errorPrint("Please enter a valid kext directory!")
-    sys.exit()
+if len(kextDir) != 0:
+    kextName = os.path.basename(kextDir)
+    if not kextName.endswith(".kext") or kextName.endswith(".bundle"):
+        errorPrint("Please enter a valid kext directory!")
+        sys.exit()
+else:
+    kextName = os.path.basename(kextLocation)
+    if not kextName.endswith(".kext") or kextName.endswith(".bundle"):
+        errorPrint("Please enter a valid kext directory!")
+        sys.exit()
 
 # AutoFind Kext Dir
 if kextDir == "":
     kextHomeDir = "/System/Volumes/Update/mnt1/System/Library/Extensions"
     kextDir = runShellCommand(f"sudo find {kextHomeDir} -name {kextName}").stdout.decode().strip()
+    print(kextDir)
     exit()
     if kextDir == "":
         errorPrint("Kext not found!")
@@ -143,9 +150,9 @@ choice = input(colored("The script is ready to start. Type \"I am sure that I wa
 if not os.path.exists(f"{scriptDir}/Backups"):
     os.mkdir(f"{scriptDir}/Backups")
 
-
 # If Backup Not Exists Then Create And If Exists Then Don't Create
 if not os.path.exists(f"{scriptDir}/Backups/{kextName}"):
+    print(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     runShellCommand(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     successPrint(f"Backup of {kextName} created!")
 else:
