@@ -1,6 +1,5 @@
 # Kext Downgrader
-
-Using NRed on macOS Monterey requires a downgrade of 2 kexts: AMDRadeonX5000HWLibs and AMDRadeonX6000Framebuffer, because Apple removed the logic for our APUs from the Monterey+ versions. This script automates the whole process of downgrading. 
+This script automates the whole process of downgrading kext. And it automatically backup the original kext 
 
 ## Prerequisites
 
