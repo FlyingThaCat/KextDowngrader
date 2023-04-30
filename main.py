@@ -13,7 +13,7 @@ import pkg_resources
 
 # argparse Handler
 parser = argparse.ArgumentParser(description='This Tools Will Search And Downgrade The Kext / Bundle On Your S/L/E And Even Restore It', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('-i', '--input', type=str, help='Example : /Users/XXXX/Documents/new.file.kext', required=True)
+parser.add_argument('-i', '--input', type=str, help='Example : /Users/XXXX/Documents/new.file.kext')
 parser.add_argument('-r', '--restore', help='Restore All The Kext', action='store_true')
 args = parser.parse_args()
 config = vars(args)
@@ -121,7 +121,7 @@ Disk.mountDisk()
 # Handling Restore
 if config["restore"]:
     # Get All File From Backup Directory
-    backupDir = os.path.join(scriptDir, "backup")
+    backupDir = os.path.join(scriptDir, "Backups")
     
     if not os.path.exists(backupDir):
         errorPrint("Backup Directory Not Found!")
