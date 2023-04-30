@@ -45,7 +45,7 @@ if not sys.platform.startswith('darwin'):
     errorPrint(f"Please Only Run It On MacOS")
     sys.exit()
 else:
-    successPrint(f"Detected : {} {platform.mac_ver()[0]}")
+    successPrint(f"Detected : MacOS {platform.mac_ver()[0]}")
 
 warningPrint("Please enter your password when you are asked to.")
 
@@ -93,6 +93,21 @@ kextDir = input(colored("Please Enter The Full Kext Directory To Replace: ", "cy
 warningPrint("Example : /Users/XXXX/Documents/new.file.kext")
 kextLocation = input(colored("Please Enter The Kext Location: ", "cyan", attrs=["bold"])).strip()
 
+# Get Kext Name with extension
+kextName = os.path.basename(kextDir)
+if not kextName.endswith(".kext"):
+    errorPrint("Please enter a valid kext directory!")
+    sys.exit()
+
+# AutoFind Kext Dir
+if kextDir == "":
+    kextHomeDir = "/System/Volumes/Update/mnt1/System/Library/Extensions"
+    kextDir = runShellCommand(f"sudo find {kextHomeDir} -name {kextName}").stdout.decode().strip()
+    exit()
+    if kextDir == "":
+        errorPrint("Kext not found!")
+        sys.exit()
+
 # Script run dir
 scriptDir = os.path.dirname(os.path.realpath(__file__))
 
@@ -128,14 +143,8 @@ choice = input(colored("The script is ready to start. Type \"I am sure that I wa
 if not os.path.exists(f"{scriptDir}/Backups"):
     os.mkdir(f"{scriptDir}/Backups")
 
-# Get Kext Name
-kextName = os.path.basename(kextDir)
-if len(kextName) == 0:
-    kextName = os.path.basename(os.path.dirname(kextDir))
-print(kextName)
 
 # If Backup Not Exists Then Create And If Exists Then Don't Create
-## TODO FIXED THIS
 if not os.path.exists(f"{scriptDir}/Backups/{kextName}"):
     runShellCommand(f"sudo cp -Rf {kextDir} {scriptDir}/Backups/{kextName}")
     successPrint(f"Backup of {kextName} created!")
